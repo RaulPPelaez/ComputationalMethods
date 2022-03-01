@@ -41,8 +41,8 @@ struct Parameters{
   std::string outFile = "pos.out";
   std::string outFileVel = "vel.out";
   
-  int numberSteps = 5000;
-  int printSteps =  100;
+  int numberSteps = 500;
+  int printSteps =  0;
   int relaxSteps = 0;
 };
 
@@ -65,11 +65,15 @@ struct HeadAndList{
 
   void updateList(std::vector<real3> &pos, real3 i_boxSize, real cutOff){
     initialize(pos.size(), i_boxSize, cutOff);
-    for(int i = 0; i<pos.size(); i++){
-      int icell = getCellIndex(getCell(pos[i]));
-      list[i+1] = head[icell];
-      head[icell] = i+1;
-    }
+    tbb::parallel_for(tbb::blocked_range<int>(0, pos.size()),
+		      [&](auto range){
+			for(int i = range.begin(); i<range.end(); i++){
+			  int icell = getCellIndex(getCell(pos[i]));
+			  list[i+1] = head[icell];
+			  head[icell] = i+1;
+			}
+		      }
+		      );
   }
   
   int3 getCell(real3 pos){
@@ -160,16 +164,16 @@ void computeForces(Particles &particles, const Parameters &par){
 
 void firstVerletUpdate(Particles & particles, const Parameters &par, std::mt19937 &gen){
   std::normal_distribution<real> dis(0.0, 1.0);
+  static std::vector<real3> noise(par.numberParticles);
   real noiseAmplitude = sqrt(par.temperature*par.friction*par.dt);
-  
+  std::generate(noise.begin(), noise.end(), [&](){return make_real3(dis(gen), dis(gen), dis(gen))*noiseAmplitude;});  
   //  for(int i = 0; i< par.numberParticles; i++){
   tbb::parallel_for(tbb::blocked_range<int>(0, par.numberParticles),
 		    [&](auto range){
 		      for(int i = range.begin(); i<range.end(); i++){
 			const real3 fi = particles.forces[i];
 			real3 vi = particles.velocities[i];
-			const real3 noise = make_real3(dis(gen), dis(gen), dis(gen))*noiseAmplitude;
-			vi += (fi - par.friction*vi)*par.dt*0.5 + noise;
+			vi += (fi - par.friction*vi)*par.dt*0.5 + noise[i];
 			particles.pos[i] += vi*par.dt*0.5;
 			particles.velocities[i] = vi;    
 		      }
@@ -179,15 +183,16 @@ void firstVerletUpdate(Particles & particles, const Parameters &par, std::mt1993
 
 void secondVerletUpdate(Particles & particles, const Parameters &par, std::mt19937 &gen){
   std::normal_distribution<real> dis(0.0, 1.0);
+  static std::vector<real3> noise(par.numberParticles);
   real noiseAmplitude = sqrt(par.temperature*par.friction*par.dt);
+  std::generate(noise.begin(), noise.end(), [&](){return make_real3(dis(gen), dis(gen), dis(gen))*noiseAmplitude;});
   //for(int i = 0; i< par.numberParticles; i++){
   tbb::parallel_for(tbb::blocked_range<int>(0, par.numberParticles),
 		    [&](auto range){
 		      for(int i = range.begin(); i<range.end(); i++){
 			const real3 fi = particles.forces[i];
 			real3 vi = particles.velocities[i];
-			const real3 noise = make_real3(dis(gen), dis(gen), dis(gen))*noiseAmplitude;    
-			vi = (vi + fi*par.dt*0.5 + noise)/(1+par.friction*par.dt*0.5);
+			vi = (vi + fi*par.dt*0.5 + noise[i])/(1+par.friction*par.dt*0.5);
 			particles.velocities[i] = vi;    
 		      }
 		    }
