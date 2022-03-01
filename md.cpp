@@ -130,27 +130,22 @@ void computeShortRangedForces(Particles &particles, const Parameters &par){
   static HeadAndList nl;
   nl.updateList(particles.pos, par.boxSize, par.cutOff);
   constexpr int numberNeighbourCells = 27;
-  tbb::parallel_for(tbb::blocked_range<int>(0, par.numberParticles),
-		    [&](auto range){
-		      for(int i = range.begin(); i<range.end(); i++){
-			//for(int i = 0; i<par.numberParticles; i++){
-			real3 fi = real3();
-			const real3 pi = particles.pos[i];
-			const int3 cell_i = nl.getCell(particles.pos[i]);
-			for(int ic = 0; ic<numberNeighbourCells; ic++){
-			  int jcell = nl.getNeighbourCellIndex(ic, cell_i);
-			  int j = nl.head[jcell];
-			  while(j!=0){
-			    if(i != j-1){
-			      fi += computeLJForce(pi, particles.pos[j-1], par);
-			    }
-			    j = nl.list[j];
-			  }
-			}
-			particles.forces[i] += fi;
-		      }
-		    }
-		    );
+  for(int i = 0; i<par.numberParticles; i++){
+    real3 fi = real3();
+    const real3 pi = particles.pos[i];
+    const int3 cell_i = nl.getCell(particles.pos[i]);
+    for(int ic = 0; ic<numberNeighbourCells; ic++){
+      int jcell = nl.getNeighbourCellIndex(ic, cell_i);
+      int j = nl.head[jcell];
+      while(j!=0){
+	if(i != j-1){
+	  fi += computeLJForce(pi, particles.pos[j-1], par);
+	}
+	j = nl.list[j];
+      }
+    }
+    particles.forces[i] += fi;
+  }
 }
 
 void computeForces(Particles &particles, const Parameters &par){
@@ -160,38 +155,27 @@ void computeForces(Particles &particles, const Parameters &par){
 
 void firstVerletUpdate(Particles & particles, const Parameters &par, std::mt19937 &gen){
   std::normal_distribution<real> dis(0.0, 1.0);
-  real noiseAmplitude = sqrt(par.temperature*par.friction*par.dt);
-  
-  //  for(int i = 0; i< par.numberParticles; i++){
-  tbb::parallel_for(tbb::blocked_range<int>(0, par.numberParticles),
-		    [&](auto range){
-		      for(int i = range.begin(); i<range.end(); i++){
-			const real3 fi = particles.forces[i];
-			real3 vi = particles.velocities[i];
-			const real3 noise = make_real3(dis(gen), dis(gen), dis(gen))*noiseAmplitude;
-			vi += (fi - par.friction*vi)*par.dt*0.5 + noise;
-			particles.pos[i] += vi*par.dt*0.5;
-			particles.velocities[i] = vi;    
-		      }
-		    }
-		    );
+  real noiseAmplitude = sqrt(par.temperature*par.friction*par.dt);  
+  for(int i = 0; i< par.numberParticles; i++){
+    const real3 fi = particles.forces[i];
+    real3 vi = particles.velocities[i];
+    const real3 noise = make_real3(dis(gen), dis(gen), dis(gen))*noiseAmplitude;
+    vi += (fi - par.friction*vi)*par.dt*0.5 + noise;
+    particles.pos[i] += vi*par.dt*0.5;
+    particles.velocities[i] = vi;    
+  }
 }
 
 void secondVerletUpdate(Particles & particles, const Parameters &par, std::mt19937 &gen){
   std::normal_distribution<real> dis(0.0, 1.0);
   real noiseAmplitude = sqrt(par.temperature*par.friction*par.dt);
-  //for(int i = 0; i< par.numberParticles; i++){
-  tbb::parallel_for(tbb::blocked_range<int>(0, par.numberParticles),
-		    [&](auto range){
-		      for(int i = range.begin(); i<range.end(); i++){
-			const real3 fi = particles.forces[i];
-			real3 vi = particles.velocities[i];
-			const real3 noise = make_real3(dis(gen), dis(gen), dis(gen))*noiseAmplitude;    
-			vi = (vi + fi*par.dt*0.5 + noise)/(1+par.friction*par.dt*0.5);
-			particles.velocities[i] = vi;    
-		      }
-		    }
-		    );
+  for(int i = 0; i< par.numberParticles; i++){
+    const real3 fi = particles.forces[i];
+    real3 vi = particles.velocities[i];
+    const real3 noise = make_real3(dis(gen), dis(gen), dis(gen))*noiseAmplitude;    
+    vi = (vi + fi*par.dt*0.5 + noise)/(1+par.friction*par.dt*0.5);
+    particles.velocities[i] = vi;    
+  }
 }
 
 real computeKineticEnergy(std::vector<real3> &vel){
